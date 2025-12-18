@@ -141,8 +141,9 @@
         <p>Загрузите файл с вопросами в формате .txt</p>
         <input type="file" id="file-input" accept=".txt">
         <div style="margin-top: 20px;">
-            <button onclick="startQuiz(true)">Режим обучения (сразу показывать ответ)</button>
-            <button onclick="startQuiz(false)">Режим тестирования (показывать результат в конце)</button>
+            <button onclick="startQuiz(true, false)">Режим обучения (50 случайных, сразу показывать ответ)</button>
+            <button onclick="startQuiz(false, false)">Режим тестирования (50 случайных, результат в конце)</button>
+            <button onclick="startQuiz(true, true)">Все вопросы из файла (сразу показывать ответ)</button>
         </div>
     </div>
     <div id="quiz">
@@ -182,65 +183,83 @@ function handleFileUpload(event) {
 }
 
 function parseQuestions(text) {
-    // Разделяем текст на строки и фильтруем пустые
-    const lines = text.split('\n').filter(line => line.trim() !== '');
-    
+    const lines = text
+        .replace(/\r/g, '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l !== '');
+
     questions = [];
     let currentQuestion = null;
-    
-    for (const line of lines) {
-        // Если строка начинается с цифры и точки/скобки - это новый вопрос
-        if (/^\d+[\.\)]/.test(line)) {
+
+    for (let line of lines) {
+
+        // ВОПРОС: 1. текст
+        if (/^\d+\.\s*/.test(line)) {
             if (currentQuestion) {
                 questions.push(currentQuestion);
             }
             currentQuestion = {
-                question: line.replace(/^\d+[\.\)]\s*/, '').trim(),
+                question: line.replace(/^\d+\.\s*/, ''),
                 options: [],
                 answer: ''
             };
-        } 
-        // Если строка начинается с буквы и точки/скобки - это вариант ответа
-        else if (/^[A-E][\.\)]/.test(line)) {
+            continue;
+        }
+
+        // ВАРИАНТЫ: A. текст (с пробелом или табом)
+        if (/^[A-E]\.\s*/.test(line)) {
             if (currentQuestion) {
-                const optionText = line.replace(/^[A-E][\.\)]\s*/, '').trim();
-                currentQuestion.options.push(optionText);
+                currentQuestion.options.push(
+                    line.replace(/^[A-E]\.\s*/, '')
+                );
             }
-        } 
-        // Если строка содержит ANSWER - это правильный ответ
-        else if (/ANSWER:/.test(line)) {
+            continue;
+        }
+
+        // ANSWER: C  или  ANSWER: C. текст
+        if (/^ANSWER:\s*[A-E]/i.test(line)) {
             if (currentQuestion) {
-                const answerMatch = line.match(/ANSWER:\s*([A-E])[\.\)]/i);
-                if (answerMatch) {
-                    const answerIndex = answerMatch[1].toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
-                    if (currentQuestion.options[answerIndex]) {
-                        currentQuestion.answer = currentQuestion.options[answerIndex];
+                const match = line.match(/^ANSWER:\s*([A-E])(?:\.\s*(.*))?/i);
+                if (match) {
+                    const index = match[1].toUpperCase().charCodeAt(0) - 65;
+
+                    // если текст ответа есть — берём его
+                    if (match[2]) {
+                        currentQuestion.answer = match[2];
+                    }
+                    // если текста нет — берём вариант по букве
+                    else if (currentQuestion.options[index]) {
+                        currentQuestion.answer = currentQuestion.options[index];
                     }
                 }
             }
+            continue;
         }
     }
-    
-    // Добавляем последний вопрос
+
     if (currentQuestion) {
         questions.push(currentQuestion);
     }
-    
-    // Фильтруем вопросы, у которых есть и вопрос, и варианты, и ответ
-    questions = questions.filter(q => 
-        q.question && q.options.length >= 2 && q.answer
+
+    questions = questions.filter(q =>
+        q.question &&
+        q.options.length >= 2 &&
+        q.answer
     );
-    
+
+    console.log('Загруженные вопросы:', questions);
+
     if (questions.length === 0) {
-        alert('Не удалось загрузить вопросы. Проверьте формат файла.');
+        alert('Ошибка: вопросы не распознаны. Проверь формат файла.');
     } else {
-        alert(`Успешно загружено ${questions.length} вопросов. Выберите режим тестирования.`);
+        alert(`Успешно загружено ${questions.length} вопросов`);
     }
 }
 
 document.getElementById('file-input').addEventListener('change', handleFileUpload);
 
-function startQuiz(showAnswer) {
+function startQuiz(showAnswer, useAllQuestions) {
     if (questions.length === 0) {
         alert('Пожалуйста, загрузите файл с вопросами перед началом теста.');
         return;
@@ -250,13 +269,20 @@ function startQuiz(showAnswer) {
     document.getElementById('setup').style.display = 'none';
     document.getElementById('quiz').style.display = 'block';
     document.getElementById('quiz-end').style.display = 'none';
-    
-    // Перемешиваем вопросы и выбираем 50 случайных
-    questions = shuffleArray(questions).slice(0, 50);
+
+    // перемешиваем
+    let preparedQuestions = shuffleArray([...questions]);
+
+    // если НЕ все вопросы — берём 50
+    if (!useAllQuestions) {
+        preparedQuestions = preparedQuestions.slice(0, 50);
+    }
+
+    questions = preparedQuestions;
     currentQuestionIndex = 0;
     score = 0;
     userAnswers = [];
-    
+
     showQuestion();
 }
 
